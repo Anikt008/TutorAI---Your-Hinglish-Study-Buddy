@@ -1,0 +1,7 @@
+{
+  "name": "TutorAI - Your Hinglish Study Buddy",
+  "description": "An AI-powered tutor that explains complex textbook questions in simple Hinglish, provides analogies, generates exam notes, and offers voice explanations.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
