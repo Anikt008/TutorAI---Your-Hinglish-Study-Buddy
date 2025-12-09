@@ -32,6 +32,14 @@ const createClient = () => {
   return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
+// Helper to clean JSON string from Markdown code blocks
+const cleanJson = (text: string): string => {
+  if (!text) return "{}";
+  // Remove markdown code blocks like ```json ... ```
+  let clean = text.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+  return clean.trim();
+};
+
 // Helper to append grounding sources
 const appendGroundingSources = (response: any, text: string): string => {
   const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
@@ -198,24 +206,49 @@ export const generateSpeech = async (text: string): Promise<string> => {
 export const generateProgressReport = async (history: ChatMessage[]): Promise<{commonMistakes: string[], learningTips: string[]}> => {
   const client = createClient();
   
+  // Create a richer context string with role labels
   const conversationText = history
-    .map(msg => `${msg.role}: ${msg.text.substring(0, 200)}`) 
-    .join('\n');
+    .filter(msg => msg.text && msg.text.trim().length > 0)
+    .map(msg => `[${msg.role.toUpperCase()}]: ${msg.text}`) 
+    .join('\n\n');
+
+  if (!conversationText) {
+    return { commonMistakes: ["No sufficient history yet."], learningTips: ["Start interacting to get tips!"] };
+  }
 
   const prompt = `
-  Analyze this student's chat history.
-  OUTPUT JSON ONLY:
+  You are an expert Academic Tutor. Your goal is to analyze the student's learning progress based on the chat history provided.
+  
+  TASK:
+  1. Read the CHAT HISTORY below carefully.
+  2. Identify recurring mistakes, misconceptions, or areas where the student struggled.
+  3. Categorize these mistakes using the following tags:
+     - **[Conceptual]**: Fundamental misunderstanding of the topic.
+     - **[Procedural]**: Errors in steps, calculation, or logic flow.
+     - **[Recall]**: Forgetting key terms, formulas, or facts.
+     - **[Interpretation]**: Misreading or misinterpreting the question.
+  4. Provide actionable learning tips to address these specific mistakes.
+
+  OUTPUT FORMAT (JSON ONLY):
   {
-    "commonMistakes": ["List 3 specific types of concepts they struggle with"],
-    "learningTips": ["List 3 personalized tips"]
+    "commonMistakes": [
+      "**[Category]** Brief description of the mistake.",
+      "**[Category]** Another mistake."
+    ],
+    "learningTips": [
+      "Specific tip to improve...",
+      "Another tip..."
+    ]
   }
   
-  HISTORY:
+  Ensure the tone is constructive and helpful. If no mistakes are found, focus on advanced tips related to the topics discussed.
+
+  CHAT HISTORY:
   ${conversationText}
   `;
 
   const response = await client.models.generateContent({
-    model: "gemini-2.5-flash",
+    model: "gemini-3-pro-preview", 
     contents: [{ parts: [{ text: prompt }] }],
     config: {
       responseMimeType: "application/json"
@@ -223,15 +256,17 @@ export const generateProgressReport = async (history: ChatMessage[]): Promise<{c
   });
 
   try {
-    const json = JSON.parse(response.text || "{}");
+    const jsonStr = cleanJson(response.text || "{}");
+    const json = JSON.parse(jsonStr);
     return {
       commonMistakes: json.commonMistakes || [],
       learningTips: json.learningTips || []
     };
   } catch (e) {
+    console.error("Progress report parse error", e);
     return {
-      commonMistakes: ["Keep learning to generate data."],
-      learningTips: ["Practice makes perfect!"]
+      commonMistakes: ["Could not analyze history at this moment."],
+      learningTips: ["Keep practicing!"]
     };
   }
 };

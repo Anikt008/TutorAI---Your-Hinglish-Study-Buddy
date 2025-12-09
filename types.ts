@@ -31,6 +31,47 @@ export enum ActionType {
   EXPLAIN = 'explain'
 }
 
+// Speech Recognition Types
+export interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+  resultIndex: number;
+}
+
+export interface SpeechRecognitionResultList {
+  length: number;
+  item(index: number): SpeechRecognitionResult;
+  [index: number]: SpeechRecognitionResult;
+}
+
+export interface SpeechRecognitionResult {
+  length: number;
+  item(index: number): SpeechRecognitionAlternative;
+  [index: number]: SpeechRecognitionAlternative;
+  isFinal: boolean;
+}
+
+export interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
+
+export interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+  message: string;
+}
+
+export interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  abort(): void;
+  onresult: (event: SpeechRecognitionEvent) => void;
+  onerror: (event: SpeechRecognitionErrorEvent) => void;
+  onend: () => void;
+}
+
 // Reducer Types
 export interface AppState {
   messages: ChatMessage[];

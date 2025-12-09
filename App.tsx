@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useReducer } from 'react';
-import { Sender, ChatMessage, ActionType, UserProfile, ProgressReport, AppState, AppAction } from './types';
+import { Sender, ChatMessage, ActionType, UserProfile, ProgressReport, AppState, AppAction, SpeechRecognitionEvent, SpeechRecognitionErrorEvent } from './types';
 import UploadZone from './components/UploadZone';
 import MarkdownRenderer from './components/MarkdownRenderer';
 import Button from './components/Button';
@@ -184,12 +184,13 @@ const App: React.FC = () => {
 
   // --- Voice Input Logic ---
   const startListening = () => {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
       alert("Your browser does not support voice input.");
       return;
     }
     
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
     recognition.lang = 'en-IN'; // Indian English
     recognition.continuous = false;
@@ -197,28 +198,33 @@ const App: React.FC = () => {
 
     dispatch({ type: 'SET_LISTENING', payload: true });
 
-    recognition.onresult = async (event: any) => {
+    recognition.onresult = async (event: SpeechRecognitionEvent) => {
       const transcript = event.results[0][0].transcript;
-      dispatch({ type: 'SET_LISTENING', payload: false });
       
-      // Send the transcript as a follow-up
-      dispatch({ type: 'SET_LOADING', payload: true });
-      dispatch({ type: 'ADD_MESSAGE', payload: { id: Date.now().toString(), role: Sender.User, text: transcript } });
-      
-      try {
-        const rawResponse = await sendFollowUp(transcript);
-        const cleanText = processResponse(rawResponse);
-        dispatch({ type: 'ADD_MESSAGE', payload: { id: (Date.now() + 1).toString(), role: Sender.Bot, text: cleanText } });
-      } catch (e) {
-         dispatch({ type: 'ADD_MESSAGE', payload: { id: (Date.now() + 1).toString(), role: Sender.Bot, text: "Could not process voice command." } });
-      } finally {
-        dispatch({ type: 'SET_LOADING', payload: false });
+      if (transcript.trim()) {
+          // Send the transcript as a follow-up
+          dispatch({ type: 'SET_LOADING', payload: true });
+          dispatch({ type: 'ADD_MESSAGE', payload: { id: Date.now().toString(), role: Sender.User, text: transcript } });
+          
+          try {
+            const rawResponse = await sendFollowUp(transcript);
+            const cleanText = processResponse(rawResponse);
+            dispatch({ type: 'ADD_MESSAGE', payload: { id: (Date.now() + 1).toString(), role: Sender.Bot, text: cleanText } });
+          } catch (e) {
+             dispatch({ type: 'ADD_MESSAGE', payload: { id: (Date.now() + 1).toString(), role: Sender.Bot, text: "Could not process voice command." } });
+          } finally {
+            dispatch({ type: 'SET_LOADING', payload: false });
+          }
       }
     };
 
-    recognition.onerror = () => {
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      console.warn("Speech recognition error:", event.error);
+      // We rely on onend to reset the state
+    };
+    
+    recognition.onend = () => {
       dispatch({ type: 'SET_LISTENING', payload: false });
-      alert("Voice recognition failed. Please try again.");
     };
 
     recognition.start();
