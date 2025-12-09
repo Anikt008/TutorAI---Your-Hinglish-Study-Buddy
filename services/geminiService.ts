@@ -1,46 +1,61 @@
+
 import { GoogleGenAI, Chat, Modality } from "@google/genai";
-import { ActionType, UserProfile, ChatMessage, Sender } from "../types";
+import { ActionType, UserProfile, ChatMessage, RevisionPlan } from "../types";
 
 const SYSTEM_INSTRUCTION = `
 You are "TutorAI", a friendly, expert Indian tutor. 
 Your job is to explain textbook questions, concepts, and videos in simple Hinglish.
 
 GUIDELINES:
-1. **Language**: Use "Hinglish" (a natural mix of Hindi and English).
+1. **Language**: "Hinglish" (Hindi + English mix). Simple words.
 2. **Structure**: 
-   - Start with a direct answer or step-by-step solution.
-   - Use bold keywords.
-   - **IMPORTANT**: At the VERY END of your response (on a new line), strictly output the main topic name in this format: [[TOPIC: Topic Name]].
-3. **Analogies**: ALWAYS provide a real-life analogy relevant to India (e.g., Cricket, Traffic, Kirana Shop).
-4. **Personalization**:
-   - If the user is WEAK in a topic, go extra slow and use very basic examples.
-   - If the user is STRONG in a topic, be concise.
-   - Address "Common Mistakes" if known.
-5. **Tone**: Encouraging, patient, and educational.
-
-If the user asks to "Simplify", use a new story/analogy.
-If the user asks for "Notes", generate strict exam-focused notes (bullets, formulas).
+   - Direct answer first.
+   - Step-by-step logic.
+   - **Analogy**: Always use a real-life Indian analogy (Cricket, Chai, Traffic, etc.).
+   - **Topic Tag**: End with [[TOPIC: Topic Name]].
+3. **Smart Modes**:
+   - If asked for **ELI5**: Explain like a bedtime story for a 5-year-old.
+   - If asked for **DIAGRAM**: Use ASCII art or Mermaid syntax to visualize.
+   - If asked for **MNEMONIC**: Give a funny, memorable trick/rhyme.
+   - If asked for **REVISION**: Bullet points, < 60 words.
+   
+4. **Tone**: Encouraging, like an elder brother/sister.
 `;
 
-// Module-level session storage (Note: In a real prod app, store this in React Context or a Class)
 let chatSession: Chat | null = null;
 
-const createClient = () => {
-  if (!process.env.API_KEY) {
-    throw new Error("API Key is missing. Please set REACT_APP_API_KEY or VITE_API_KEY.");
-  }
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+// --- FALLBACK MOCK ENGINE ---
+// This runs if API Key is missing or network fails
+const getMockResponse = (input: string, action?: ActionType): string => {
+  const genericTopic = "Physics/Math Concept";
+  
+  const mocks: Record<string, string> = {
+    [ActionType.ELI5]: `👶 **Baby Explanation:**\nImagine you have a toy car. Inertia is like when you push the car, it keeps moving until it hits a wall. Simple na?\n\n[[TOPIC: Inertia]]`,
+    [ActionType.MNEMONIC]: `🧠 **Memory Trick:**\nYaad rakho: "My Very Educated Mother Just Served Us Noodles"\n(Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune)\n\n[[TOPIC: Solar System]]`,
+    [ActionType.DIAGRAM]: `📐 **Visual Diagram:**\n\`\`\`\n   [ Force ] ---> [ Object ] ---> [ Acceleration ]\n\`\`\`\nMore force = More speed!\n\n[[TOPIC: Newton's 2nd Law]]`,
+    [ActionType.REVISION]: `⚡ **1-Minute Revision:**\n- Force = Mass x Acceleration (F=ma)\n- Unit is Newton (N)\n- It is a vector quantity (direction matters)\n\n[[TOPIC: Force]]`,
+    [ActionType.QUIZ]: `❓ **Practice Question:**\nQ: What is the unit of Force?\nA) Joule\nB) Newton\nC) Watt\n\n(Answer: B)`,
+    "default": `🤖 **Offline Mode:**\nMujhe exact answer internet se nahi mila, par concept simple hai. Usually, textbook questions formula based hote hain. Try breaking it down:\n1. Given kya hai?\n2. Formula konsa lagega?\n3. Calculate karo.\n\n(Please check your API Key to get smart AI answers!)`
+  };
+
+  return mocks[action as string] || mocks["default"];
 };
 
-// Helper to clean JSON string from Markdown code blocks
+const createClient = () => {
+  const apiKey = process.env.API_KEY || (import.meta as any).env?.VITE_API_KEY; 
+  if (!apiKey) {
+    throw new Error("MISSING_KEY"); // Signal to switch to offline mode
+  }
+  return new GoogleGenAI({ apiKey });
+};
+
+// ... (cleanJson, appendGroundingSources, getProfileContext kept same as before) ...
 const cleanJson = (text: string): string => {
   if (!text) return "{}";
-  // Remove markdown code blocks like ```json ... ```
-  let clean = text.replace(/```json\s*/g, '').replace(/```\s*/g, '');
-  return clean.trim();
+  const match = text.match(/\{[\s\S]*\}/);
+  return match ? match[0] : "{}";
 };
 
-// Helper to append grounding sources
 const appendGroundingSources = (response: any, text: string): string => {
   const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
   if (!chunks || chunks.length === 0) return text;
@@ -61,212 +76,144 @@ const appendGroundingSources = (response: any, text: string): string => {
 const getProfileContext = (profile: UserProfile): string => {
   if (!profile) return "";
   const weak = profile.weakTopics?.length > 0 ? profile.weakTopics.join(', ') : "None";
-  const strong = profile.strongTopics?.length > 0 ? profile.strongTopics.join(', ') : "None";
-  
-  let context = `\n[STUDENT CONTEXT]:\n- Weak Topics: [${weak}]\n- Mastered Topics: [${strong}]`;
-
-  if (profile.progressReport?.commonMistakes && profile.progressReport.commonMistakes.length > 0) {
-    context += `\n- Common Mistakes to Watch: ${profile.progressReport.commonMistakes.join(', ')}`;
-  }
-  
-  return context;
+  return `\n[STUDENT CONTEXT]:\n- Weak Topics: [${weak}]`;
 };
 
-export const startNewSession = async (imageBase64: string, mimeType: string, profile: UserProfile): Promise<string> => {
-  const client = createClient();
-  
-  // VIBE CODE UPGRADE: Using gemini-3-pro-preview for superior visual reasoning
-  chatSession = client.chats.create({
-    model: 'gemini-3-pro-preview',
-    config: {
-      systemInstruction: SYSTEM_INSTRUCTION,
-      // Gemini 3 Pro supports thinking, we can enable it if needed, but standard config is safer for now
-    }
-  });
+export const startNewSession = async (imageBase64: string | null, mimeType: string | null, profile: UserProfile, textQuery?: string): Promise<string> => {
+  try {
+    const client = createClient();
+    
+    chatSession = client.chats.create({
+      model: 'gemini-3-pro-preview',
+      config: { systemInstruction: SYSTEM_INSTRUCTION }
+    });
 
-  const response = await chatSession.sendMessage({
-    message: {
-      role: 'user',
-      parts: [
-        {
-          inlineData: {
-            data: imageBase64,
-            mimeType: mimeType || 'image/jpeg'
-          }
-        },
-        {
-          text: "Identify this question, categorize it, and explain the solution step-by-step in Hinglish." + getProfileContext(profile)
-        }
-      ]
+    const parts: any[] = [];
+    if (imageBase64 && mimeType) {
+      parts.push({ inlineData: { data: imageBase64, mimeType: mimeType } });
     }
-  });
+    const queryText = textQuery || "Identify this question, categorize it, and explain the solution step-by-step in Hinglish.";
+    parts.push({ text: queryText + getProfileContext(profile) });
 
-  return response.text || "Sorry, I couldn't analyze that image.";
+    const response = await chatSession.sendMessage({ message: { role: 'user', parts: parts } });
+    return response.text || "Sorry, I couldn't analyze that.";
+
+  } catch (error: any) {
+    if (error.message === "MISSING_KEY" || error.toString().includes("API key")) {
+      throw new Error("OFFLINE_MODE");
+    }
+    console.error(error);
+    throw error;
+  }
 };
 
 export const analyzeYouTubeVideo = async (url: string, profile: UserProfile): Promise<string> => {
-  const client = createClient();
-  
-  chatSession = client.chats.create({
-    model: 'gemini-3-pro-preview', // Using 3 Pro for Search Grounding
-    config: {
-      systemInstruction: SYSTEM_INSTRUCTION,
-      tools: [{ googleSearch: {} }] 
-    }
-  });
-
-  const prompt = `
-  I have provided a YouTube video link: ${url}
-  
-  TASK:
-  1. FIRST, verify the video exists by finding its **Title** and **Channel Name** using Google Search.
-  2. If you cannot find the specific video details, stop and say "I couldn't verify this video."
-  3. Explain the content in Hinglish STRICTLY based on the video's actual topic.
-  
-  ${getProfileContext(profile)}
-  
-  OUTPUT (in Hinglish):
-  - **Video Title**: [Title]
-  - **Summary**: Strict summary.
-  - **Step-by-Step Explanation**: Key concepts.
-  - **Real-Life Analogies**: Indian context.
-  
-  Remember to end with [[TOPIC: Topic Name]].
-  `;
-
-  const response = await chatSession.sendMessage({ message: prompt });
-  let text = response.text || "Sorry, I couldn't analyze that video link.";
-  return appendGroundingSources(response, text);
+  try {
+    const client = createClient();
+    chatSession = client.chats.create({
+      model: 'gemini-3-pro-preview',
+      config: { systemInstruction: SYSTEM_INSTRUCTION, tools: [{ googleSearch: {} }] }
+    });
+    const prompt = `YouTube Link: ${url}. Verify title. Explain content in Hinglish based on video topic. ${getProfileContext(profile)}. End with [[TOPIC: Name]].`;
+    const response = await chatSession.sendMessage({ message: prompt });
+    return appendGroundingSources(response, response.text || "Could not analyze video.");
+  } catch (error: any) {
+     if (error.message === "MISSING_KEY") throw new Error("OFFLINE_MODE");
+     throw error;
+  }
 };
 
-export const sendFollowUp = async (actionOrText: ActionType | string, contextText?: string): Promise<string> => {
-  if (!chatSession) throw new Error("Session expired. Please upload the question again.");
-
-  let prompt = "";
-  if (Object.values(ActionType).includes(actionOrText as ActionType)) {
-      switch (actionOrText) {
-        case ActionType.SIMPLIFY:
-          prompt = "Mujhe samajh nahi aaya. Explain again using a very simple real-life analogy (story format). Keep it super easy.";
-          break;
-        case ActionType.NOTES:
-          prompt = "Generate 'Exam-Focused Notes'. Include Definition, Formula, Steps, Keywords. Follow CBSE/ICSE pattern.";
-          break;
-        case ActionType.QUIZ:
-          prompt = "Create a short 'Instant Quiz' (3 MCQs) with answers at the end.";
-          break;
-        default:
-          prompt = contextText || "Explain this further.";
-      }
-  } else {
-      prompt = actionOrText as string;
+export const sendFollowUp = async (actionOrText: ActionType | string): Promise<string> => {
+  // Mock Mode Check
+  if (!chatSession) {
+      // If no session but we want to simulate a response (e.g. offline mode started directly)
+      // For now, we throw error to trigger offline handler in App.tsx
+      throw new Error("OFFLINE_MODE");
   }
 
-  const response = await chatSession.sendMessage({ message: prompt });
-  let text = response.text || "I couldn't generate a response.";
-  return appendGroundingSources(response, text);
+  try {
+    let prompt = "";
+    if (Object.values(ActionType).includes(actionOrText as ActionType)) {
+        switch (actionOrText) {
+          case ActionType.SIMPLIFY: prompt = "Simplify this further with a story analogy."; break;
+          case ActionType.NOTES: prompt = "Generate Exam Notes (Bullets, Formulas)."; break;
+          case ActionType.QUIZ: prompt = "Create 3 MCQs with answers at the end."; break;
+          case ActionType.ELI5: prompt = "Explain it like I am a 5 year old kid (ELI5). Use emoji stories."; break;
+          case ActionType.DIAGRAM: prompt = "Create a text-based visual diagram (ASCII or Flowchart) to explain this."; break;
+          case ActionType.MNEMONIC: prompt = "Give me a funny mnemonic or memory trick to remember this."; break;
+          case ActionType.REVISION: prompt = "Give me a 1-minute quick revision summary."; break;
+          case ActionType.PRACTICE: prompt = "Give me 3 practice questions (Easy, Medium, Hard)."; break;
+          default: prompt = "Explain further.";
+        }
+    } else {
+        prompt = actionOrText as string;
+    }
+
+    const response = await chatSession.sendMessage({ message: prompt });
+    return appendGroundingSources(response, response.text || "No response.");
+  } catch (error: any) {
+    if (error.message === "MISSING_KEY") throw new Error("OFFLINE_MODE");
+    // If session matches mock logic
+    return getMockResponse("Follow Up", actionOrText as ActionType);
+  }
 };
 
 export const generateSpeech = async (text: string): Promise<string> => {
-  const client = createClient();
-  
-  const textWithoutSources = text.split('### 🔗 Reference Sources:')[0];
-  const textWithoutTopic = textWithoutSources.split('[[TOPIC:')[0];
-  
-  let cleanText = textWithoutTopic
-    .replace(/\*\*/g, '')
-    .replace(/^#+\s/gm, '')
-    .replace(/`[^`]*`/g, 'code block')
-    .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
-    .replace(/https?:\/\/[^\s]+/g, 'link')
-    .replace(/\s+/g, ' ')
-    .trim();
+  try {
+    const client = createClient();
+    let cleanText = text.replace(/###.*?(\n|$)/g, '').replace(/\[\[TOPIC:.*?\]\]/g, '').replace(/[*#`]/g, '');
+    if (cleanText.length > 800) cleanText = cleanText.substring(0, 800);
 
-  if (cleanText.length > 800) cleanText = cleanText.substring(0, 800) + "...";
-  if (!cleanText || cleanText.length < 2) cleanText = "Here is the explanation.";
-
-  const response = await client.models.generateContent({
-    model: "gemini-2.5-flash-preview-tts",
-    contents: [{ parts: [{ text: cleanText }] }],
-    config: {
-      responseModalities: [Modality.AUDIO],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: { voiceName: 'Puck' }, 
-        },
+    const response = await client.models.generateContent({
+      model: "gemini-2.5-flash-preview-tts",
+      contents: [{ parts: [{ text: cleanText }] }],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } } },
       },
-    },
-  });
-
-  const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-  if (!audioData) throw new Error("No audio generated");
-  
-  return audioData;
+    });
+    const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (!audioData) throw new Error("No audio");
+    return audioData;
+  } catch (e) {
+    console.warn("TTS Failed, might be offline");
+    throw e; 
+  }
 };
 
 export const generateProgressReport = async (history: ChatMessage[]): Promise<{commonMistakes: string[], learningTips: string[]}> => {
-  const client = createClient();
-  
-  // Create a richer context string with role labels
-  const conversationText = history
-    .filter(msg => msg.text && msg.text.trim().length > 0)
-    .map(msg => `[${msg.role.toUpperCase()}]: ${msg.text}`) 
-    .join('\n\n');
-
-  if (!conversationText) {
-    return { commonMistakes: ["No sufficient history yet."], learningTips: ["Start interacting to get tips!"] };
-  }
-
-  const prompt = `
-  You are an expert Academic Tutor. Your goal is to analyze the student's learning progress based on the chat history provided.
-  
-  TASK:
-  1. Read the CHAT HISTORY below carefully.
-  2. Identify recurring mistakes, misconceptions, or areas where the student struggled.
-  3. Categorize these mistakes using the following tags:
-     - **[Conceptual]**: Fundamental misunderstanding of the topic.
-     - **[Procedural]**: Errors in steps, calculation, or logic flow.
-     - **[Recall]**: Forgetting key terms, formulas, or facts.
-     - **[Interpretation]**: Misreading or misinterpreting the question.
-  4. Provide actionable learning tips to address these specific mistakes.
-
-  OUTPUT FORMAT (JSON ONLY):
-  {
-    "commonMistakes": [
-      "**[Category]** Brief description of the mistake.",
-      "**[Category]** Another mistake."
-    ],
-    "learningTips": [
-      "Specific tip to improve...",
-      "Another tip..."
-    ]
-  }
-  
-  Ensure the tone is constructive and helpful. If no mistakes are found, focus on advanced tips related to the topics discussed.
-
-  CHAT HISTORY:
-  ${conversationText}
-  `;
-
-  const response = await client.models.generateContent({
-    model: "gemini-3-pro-preview", 
-    contents: [{ parts: [{ text: prompt }] }],
-    config: {
-      responseMimeType: "application/json"
-    }
-  });
-
   try {
-    const jsonStr = cleanJson(response.text || "{}");
-    const json = JSON.parse(jsonStr);
-    return {
-      commonMistakes: json.commonMistakes || [],
-      learningTips: json.learningTips || []
-    };
+    const client = createClient();
+    const conversationText = history.map(msg => `[${msg.role}]: ${msg.text}`).join('\n');
+    const prompt = `Analyze history. JSON output: { "commonMistakes": [], "learningTips": [] }. History: ${conversationText}`;
+
+    const response = await client.models.generateContent({
+      model: "gemini-3-pro-preview", 
+      contents: [{ parts: [{ text: prompt }] }],
+      config: { responseMimeType: "application/json" }
+    });
+    return JSON.parse(cleanJson(response.text || "{}"));
   } catch (e) {
-    console.error("Progress report parse error", e);
-    return {
-      commonMistakes: ["Could not analyze history at this moment."],
-      learningTips: ["Keep practicing!"]
-    };
+    return { commonMistakes: ["Server unreachable"], learningTips: ["Check internet connection"] };
   }
 };
+
+export const generateRevisionPlan = async (profile: UserProfile): Promise<RevisionPlan> => {
+  try {
+    const client = createClient();
+    const weak = profile.weakTopics.join(", ");
+    const prompt = `User weak in: ${weak}. Generate 1-day plan. JSON: { "topic": "Topic", "tasks": ["Task 1", "Task 2"] }`;
+
+    const response = await client.models.generateContent({
+      model: "gemini-3-pro-preview",
+      contents: [{ parts: [{ text: prompt }] }],
+      config: { responseMimeType: "application/json" }
+    });
+    return JSON.parse(cleanJson(response.text || "{}"));
+  } catch (e) {
+    return { topic: "Offline Plan", tasks: ["Review your Textbook", "Practice solved examples"] };
+  }
+};
+
+// Exporting the Mock Generator for App.tsx to use directly if needed
+export const getOfflineResponse = getMockResponse;

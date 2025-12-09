@@ -1,3 +1,4 @@
+
 export enum Sender {
   User = 'user',
   Bot = 'model'
@@ -9,13 +10,23 @@ export interface ChatMessage {
   text: string;
   image?: string;
   isAudioPlaying?: boolean;
+  type?: 'text' | 'diagram' | 'error';
+}
+
+export interface RevisionPlan {
+  topic: string;
+  tasks: string[];
 }
 
 export interface UserProfile {
+  name: string;
   weakTopics: string[];
   strongTopics: string[];
   totalSessions: number;
+  streakDays: number;
+  lastStudyDate: string; // ISO date string
   progressReport?: ProgressReport;
+  revisionPlan?: RevisionPlan;
 }
 
 export interface ProgressReport {
@@ -25,13 +36,27 @@ export interface ProgressReport {
 }
 
 export enum ActionType {
+  // Original
   SIMPLIFY = 'simplify',
   NOTES = 'notes',
   QUIZ = 'quiz',
-  EXPLAIN = 'explain'
+  EXPLAIN = 'explain',
+  
+  // New Smart Actions
+  ELI5 = 'eli5',           // Explain Like I'm 5
+  DIAGRAM = 'diagram',     // Visual/ASCII Diagram
+  MNEMONIC = 'mnemonic',   // Memory Trick
+  REVISION = 'revision',   // 1-Minute Revision
+  PRACTICE = 'practice'    // Practice Questions
 }
 
-// Speech Recognition Types
+export enum AppMode {
+  UPLOAD = 'upload',
+  CHAT = 'chat',
+  DASHBOARD = 'dashboard'
+}
+
+// Speech Recognition Types (Kept same)
 export interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList;
   resultIndex: number;
@@ -72,27 +97,35 @@ export interface SpeechRecognition extends EventTarget {
   onend: () => void;
 }
 
-// Reducer Types
+declare global {
+  interface Window {
+    SpeechRecognition: { new (): SpeechRecognition };
+    webkitSpeechRecognition: { new (): SpeechRecognition };
+  }
+}
+
 export interface AppState {
   messages: ChatMessage[];
   isLoading: boolean;
-  currentMode: 'upload' | 'chat';
+  currentMode: AppMode;
   error: string | null;
   userProfile: UserProfile;
   isProfileOpen: boolean;
   youtubeLink: string;
-  isListening: boolean; // For Voice Input
+  isListening: boolean;
+  isOfflineMode: boolean; // NEW: Tracks if we are using the fallback engine
 }
 
 export type AppAction =
   | { type: 'SET_MESSAGES'; payload: ChatMessage[] }
   | { type: 'ADD_MESSAGE'; payload: ChatMessage }
   | { type: 'SET_LOADING'; payload: boolean }
-  | { type: 'SET_MODE'; payload: 'upload' | 'chat' }
+  | { type: 'SET_MODE'; payload: AppMode }
   | { type: 'SET_ERROR'; payload: string | null }
   | { type: 'UPDATE_PROFILE'; payload: Partial<UserProfile> }
   | { type: 'TOGGLE_PROFILE'; payload: boolean }
   | { type: 'SET_YOUTUBE_LINK'; payload: string }
   | { type: 'SET_LISTENING'; payload: boolean }
   | { type: 'RESET_APP' }
+  | { type: 'SET_OFFLINE_MODE'; payload: boolean }
   | { type: 'UPDATE_MESSAGE_AUDIO'; payload: { id: string; isPlaying: boolean } };
