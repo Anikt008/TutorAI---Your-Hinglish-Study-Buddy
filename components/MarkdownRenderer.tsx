@@ -4,7 +4,7 @@ interface Props {
   content: string;
 }
 
-const MarkdownRenderer: React.FC<Props> = ({ content }) => {
+const MarkdownRenderer: React.FC<Props> = React.memo(({ content }) => {
   // Safe guard against null/undefined content
   if (!content) return null;
 
@@ -66,6 +66,6 @@ const MarkdownRenderer: React.FC<Props> = ({ content }) => {
       {formatText(content)}
     </div>
   );
-};
+});
 
 export default MarkdownRenderer;

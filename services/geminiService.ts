@@ -28,29 +28,45 @@ let chatSession: Chat | null = null;
 // --- FALLBACK MOCK ENGINE ---
 // This runs if API Key is missing or network fails
 const getMockResponse = (input: string, action?: ActionType): string => {
-  // New logic for specific keywords
   const lowerInput = input ? input.toLowerCase() : "";
   
+  // 1. Specific Topic Handling (Demo ke liye best questions)
   if (lowerInput.includes("photosynthesis")) {
-      return `🌿 **Photosynthesis Process:**\n\n**Flow:**\nSunlight ☀️ → Chlorophyll 🍃 → Food 🍎 → Energy ⚡\n\n**Simple Definition:**\nJaise hum kitchen mein khana banate hain, plants **Leaves** mein khana banate hain using Sunlight and Water.\n\n[[TOPIC: Biology]]`;
+      return `🌿 **Photosynthesis (Offline Mode):**\n\n**Process:**\nSunlight ☀️ + Water 💧 + CO2 🌬️ → Food (Glucose) 🍎 + Oxygen 🌬️\n\n**Analogy:**\nJaise Mummy kitchen me gas aur sabzi use karke khana banati hain, waise hi plants **Leaves (Chlorophyll)** me sunlight use karke khana banate hain.\n\n[[TOPIC: Biology]]`;
   }
 
   if (lowerInput.includes("balance sheet")) {
-      return `💰 **Balance Sheet Concept:**\n\n**Flow:**\nAssets 🏠 → Liabilities 💳 → Equity 💼\n\n**Simple Definition:**\nBalance Sheet ek "financial snapshot" hai. Ye batata hai ki company ke paas aaj kya hai (Assets) aur use udhaar kitna chukana hai (Liabilities).\n\nFormula: **Assets = Liabilities + Equity**\n\n[[TOPIC: Accounting]]`;
+      return `💰 **Balance Sheet (Offline Mode):**\n\n**Formula:** Assets = Liabilities + Equity\n\n**Concept:**\nYe ek business ka "Report Card" hai.\n- **Assets:** Jo tumhare paas hai (Cash, Building).\n- **Liabilities:** Jo udhaar chukana hai (Loans).\n\n[[TOPIC: Accounting]]`;
+  }
+  
+  if (lowerInput.includes("newton") || lowerInput.includes("law")) {
+      return `🍎 **Newton's Laws (Offline Mode):**\n\n**Law 1 (Inertia):** Cheezein rukna ya chalna continue karti hain jab tak force na lage.\n**Law 2 (F=ma):** Zyada mass = Zyada force chahiye hilane ke liye.\n**Law 3 (Action-Reaction):** Har action ka equal opposite reaction hota hai.\n\n[[TOPIC: Physics]]`;
   }
 
-  const genericTopic = "Physics/Math Concept";
-  
+  // 2. YouTube Handling
+  if (lowerInput.includes("youtube.com") || lowerInput.includes("youtu.be")) {
+      return `⚠️ **Offline Mode:**\nMain video analyze nahi kar sakta bina internet ke, par ye **Study Tips** follow karo:\n\n1. **Speed:** 1.5x pe dekho time bachane ke liye.\n2. **Notes:** Video ke beech me pause karke key points likho.\n3. **Summary:** Khud se poocho "Is video ka main point kya tha?"`;
+  }
+
+  // 3. Smart Action Handlers (Buttons like "Simplify", "Notes")
   const mocks: Record<string, string> = {
-    [ActionType.ELI5]: `👶 **Baby Explanation:**\nImagine you have a toy car. Inertia is like when you push the car, it keeps moving until it hits a wall. Simple na?\n\n[[TOPIC: Inertia]]`,
-    [ActionType.MNEMONIC]: `🧠 **Memory Trick:**\nYaad rakho: "My Very Educated Mother Just Served Us Noodles"\n(Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune)\n\n[[TOPIC: Solar System]]`,
-    [ActionType.DIAGRAM]: `📐 **Visual Diagram:**\n\`\`\`\n   [ Force ] ---> [ Object ] ---> [ Acceleration ]\n\`\`\`\nMore force = More speed!\n\n[[TOPIC: Newton's 2nd Law]]`,
-    [ActionType.REVISION]: `⚡ **1-Minute Revision:**\n- Force = Mass x Acceleration (F=ma)\n- Unit is Newton (N)\n- It is a vector quantity (direction matters)\n\n[[TOPIC: Force]]`,
-    [ActionType.QUIZ]: `❓ **Practice Question:**\nQ: What is the unit of Force?\nA) Joule\nB) Newton\nC) Watt\n\n(Answer: B)`,
-    "default": `🤖 **Offline Mode:**\nMujhe exact answer internet se nahi mila, par concept simple hai. Usually, textbook questions formula based hote hain. Try breaking it down:\n1. Given kya hai?\n2. Formula konsa lagega?\n3. Calculate karo.\n\n(Please check your API Key to get smart AI answers!)`
+    [ActionType.SIMPLIFY]: `🤯 **Simplified (Offline):**\nImagine karo ye ek game ki tarah hai. Jab tak tum start button nahi dabate, game pause rehta hai. Ye concept bhi waisa hi hai!\n\n(Connect to internet for better analogies!)`,
+    [ActionType.ELI5]: `👶 **ELI5 (Offline):**\nSocho tumhare paas ek bada pizza hai. Agar tum use doston me baatoge, toh sabko kam milega. Yahi concept yahan apply hota hai divide karne par.\n\n[[TOPIC: Math]]`,
+    [ActionType.MNEMONIC]: `🧠 **Memory Trick (Offline):**\nEk funny sentence banao words ke first letters se.\nExample: **V**iolet **I**ndigo **B**lue... -> "VIBGYOR"`,
+    [ActionType.DIAGRAM]: `📐 **Visual Diagram (Offline):**\n\`\`\`\n   [ Input ] ---> [ Process ] ---> [ Output ]\n\`\`\`\nOffline diagram: Data flow aise hota hai.\n\n[[TOPIC: Logic]]`,
+    [ActionType.REVISION]: `⚡ **1-Minute Revision (Offline):**\n- Main Definition yaad karlo.\n- Formula rat lo.\n- Unit: SI Units hamesha check karo.\n\n[[TOPIC: Revision]]`,
+    [ActionType.NOTES]: `📝 **Offline Notes:**\n- Keywords underline karna.\n- Exam me diagram banana mat bhoolna.\n- Point-wise answers likhna.`,
+    [ActionType.QUIZ]: `❓ **Offline Quiz:**\nQ: Is concept ka main unit kya hai?\nA) Joule\nB) Newton\nC) Watt\n\n(Khud socho! Answer B ho sakta hai 😉)`,
+    [ActionType.PRACTICE]: `✍️ **Practice (Offline):**\n1. Textbook ka example 3 solve karo.\n2. Previous year paper check karo.\n3. Formula bina dekhe likho.`,
   };
 
-  return mocks[action as string] || mocks["default"];
+  if (action && mocks[action]) {
+    return mocks[action];
+  }
+
+  // 4. Generic Fallback (Smart Echo)
+  // Agar kuch match na ho, to user ke input ko use karke smart lago
+  return `🤖 **Offline Mode Active:**\n\nMaine tumhara question padha: _"${input ? input.substring(0, 50) : 'Question'}..."_\n\nInternet connect nahi hai, par ye steps follow karo solve karne ke liye:\n1. **Question samjho:** Kya pucha gaya hai?\n2. **Formula dhundo:** Apni textbook ke index me topic check karo.\n3. **Step-by-step:** Bada problem chote parts me todo.\n\n(Please check your API Key/Internet for full AI power!)`;
 };
 
 const createClient = () => {
@@ -61,11 +77,18 @@ const createClient = () => {
   return new GoogleGenAI({ apiKey });
 };
 
-// ... (cleanJson, appendGroundingSources, getProfileContext kept same as before) ...
+// IMPROVED: Robust JSON cleaner that removes Markdown code blocks
 const cleanJson = (text: string): string => {
   if (!text) return "{}";
-  const match = text.match(/\{[\s\S]*\}/);
-  return match ? match[0] : "{}";
+  // Remove markdown code blocks if present (```json ... ```)
+  let clean = text.replace(/```json/g, "").replace(/```/g, "");
+  // Find the first '{' and last '}'
+  const start = clean.indexOf('{');
+  const end = clean.lastIndexOf('}');
+  if (start !== -1 && end !== -1) {
+    return clean.substring(start, end + 1);
+  }
+  return "{}";
 };
 
 const appendGroundingSources = (response: any, text: string): string => {
@@ -120,18 +143,38 @@ export const startNewSession = async (imageBase64: string | null, mimeType: stri
 };
 
 export const analyzeYouTubeVideo = async (url: string, profile: UserProfile): Promise<string> => {
+  // Check for API Key validity before attempting connection
+  if (!process.env.API_KEY) {
+    return getMockResponse(url);
+  }
+
   try {
     const client = createClient();
     chatSession = client.chats.create({
       model: 'gemini-3-pro-preview',
+      // We use googleSearch to effectively 'getVideoInfo' and analyze content
       config: { systemInstruction: SYSTEM_INSTRUCTION, tools: [{ googleSearch: {} }] }
     });
-    const prompt = `YouTube Link: ${url}. Verify title. Explain content in Hinglish based on video topic. ${getProfileContext(profile)}. End with [[TOPIC: Name]].`;
+    const prompt = `You are TutorAI. 
+Analyze this YouTube link to provide a comprehensive study guide in Hinglish.
+Using the video's metadata (and search results if available), provide the following in detail:
+
+1. **📝 Detailed Summary**: A comprehensive explanation of what the video covers, expanding on the main topic.
+2. **🔑 Key Takeaways**: The most important points, facts, or formulas mentioned (bullet points).
+3. **💡 Practical Application**: How to use this information in real life or exams. (What is the use of this info?)
+4. **📚 Structured Notes**: A mini-revision note for students.
+
+Here is the link: ${url}
+
+${getProfileContext(profile)}
+
+IMPORTANT: End your response with [[TOPIC: Topic Name]] for categorization.`;
+
     const response = await chatSession.sendMessage({ message: prompt });
     return appendGroundingSources(response, response.text || "Could not analyze video.");
   } catch (error: any) {
      if (error.message === "MISSING_KEY") throw new Error("OFFLINE_MODE");
-     throw error;
+     return "Sorry, I encountered an error analyzing the video.";
   }
 };
 
@@ -173,7 +216,13 @@ export const sendFollowUp = async (actionOrText: ActionType | string): Promise<s
 export const generateSpeech = async (text: string): Promise<string> => {
   try {
     const client = createClient();
-    let cleanText = text.replace(/###.*?(\n|$)/g, '').replace(/\[\[TOPIC:.*?\]\]/g, '').replace(/[*#`]/g, '');
+    // Clean text more aggressively for TTS
+    let cleanText = text.replace(/###/g, '')
+                        .replace(/\*\*/g, '')
+                        .replace(/\[\[TOPIC:.*?\]\]/g, '')
+                        .replace(/`/g, '')
+                        .replace(/\[Source\]\(.*?\)/g, '');
+                        
     if (cleanText.length > 800) cleanText = cleanText.substring(0, 800);
 
     const response = await client.models.generateContent({
@@ -204,9 +253,12 @@ export const generateProgressReport = async (history: ChatMessage[]): Promise<{c
       contents: [{ parts: [{ text: prompt }] }],
       config: { responseMimeType: "application/json" }
     });
+    // Use the robust cleanJson function
     return JSON.parse(cleanJson(response.text || "{}"));
   } catch (e) {
-    return { commonMistakes: ["Server unreachable"], learningTips: ["Check internet connection"] };
+    console.error("Progress Report Error:", e);
+    // Return safe default data on failure so ProfileModal doesn't crash
+    return { commonMistakes: ["Offline mode active: Cannot analyze."], learningTips: ["Check back when online."] };
   }
 };
 

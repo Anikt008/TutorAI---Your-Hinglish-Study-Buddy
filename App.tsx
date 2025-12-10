@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useReducer, useState } from 'react';
 import { Sender, ChatMessage, ActionType, UserProfile, ProgressReport, AppState, AppAction, SpeechRecognitionEvent, SpeechRecognitionErrorEvent, AppMode, SpeechRecognition, ChatSession } from './types';
 import UploadZone from './components/UploadZone';
@@ -197,6 +196,31 @@ const App: React.FC = () => {
     return rawText;
   };
 
+  const handleSpeak = async (msg: ChatMessage) => {
+    if (msg.role !== Sender.Bot) return;
+
+    if (msg.isAudioPlaying) {
+        // Toggle off (Logic implies we want to stop. playAudioStream handles singleton replacement, but explicit stop isn't exposed yet, 
+        // effectively playing a new stream or letting it finish. For now, we update UI state).
+        dispatch({ type: 'UPDATE_MESSAGE_AUDIO', payload: { id: msg.id, isPlaying: false } });
+        // In a full implementation, we would call audioContext.suspend() or source.stop() exposed via utils
+        return;
+    }
+
+    dispatch({ type: 'UPDATE_MESSAGE_AUDIO', payload: { id: msg.id, isPlaying: true } });
+    try {
+      // 1. Generate Audio (or fetch if cached)
+      const audioData = await generateSpeech(msg.text);
+      // 2. Play Audio
+      await playAudioStream(audioData);
+    } catch (e) {
+      console.error("Audio playback failed", e);
+      alert("Could not play audio. Check internet connection.");
+    } finally {
+      dispatch({ type: 'UPDATE_MESSAGE_AUDIO', payload: { id: msg.id, isPlaying: false } });
+    }
+  };
+
   const handleQuickStart = async (topic: string) => {
     // Reset session for new quick start if we are not already in a chat
     if (state.currentMode !== AppMode.CHAT) {
@@ -313,7 +337,9 @@ const App: React.FC = () => {
     } catch (error) {
        console.warn("API Failed, switching to Offline Mode", error);
        dispatch({ type: 'SET_OFFLINE_MODE', payload: true });
-       dispatch({ type: 'ADD_MESSAGE', payload: { id: (Date.now() + 1).toString(), role: Sender.Bot, text: "📺 **Offline**: Can't watch videos without internet. Type the topic!" } });
+       // Use getMockResponse to simulate video analysis even offline/failed state
+       const mock = getOfflineResponse(trimmedLink);
+       dispatch({ type: 'ADD_MESSAGE', payload: { id: (Date.now() + 1).toString(), role: Sender.Bot, text: mock } });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
@@ -451,7 +477,7 @@ const App: React.FC = () => {
             <div className="flex flex-col space-y-6 pb-32">
               {state.messages.map((msg) => (
                 <div key={msg.id} className={`flex ${msg.role === Sender.User ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[90%] md:max-w-[80%] rounded-2xl shadow-sm overflow-hidden ${
+                  <div className={`relative max-w-[90%] md:max-w-[80%] rounded-2xl shadow-sm overflow-hidden ${
                     msg.role === Sender.User 
                       ? 'bg-gradient-to-br from-indigo-600 to-purple-700 text-white rounded-tr-none' 
                       : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-tl-none'
@@ -461,7 +487,33 @@ const App: React.FC = () => {
                       {msg.role === Sender.User ? (
                         <p className="font-medium text-lg leading-relaxed">{msg.text}</p>
                       ) : (
-                        <MarkdownRenderer content={msg.text} />
+                        <div className="relative">
+                          <MarkdownRenderer content={msg.text} />
+                          {/* Speaker Button - Only for Bot */}
+                          <div className="flex justify-end mt-2 pt-2 border-t border-slate-100 dark:border-slate-700/50">
+                            <button 
+                              onClick={() => handleSpeak(msg)}
+                              className={`p-2 rounded-full transition-all flex items-center gap-2 text-sm ${
+                                msg.isAudioPlaying 
+                                ? 'bg-indigo-100 text-indigo-600 animate-pulse dark:bg-indigo-900/40 dark:text-indigo-300' 
+                                : 'text-slate-400 hover:bg-slate-50 hover:text-indigo-600 dark:hover:bg-slate-700/50 dark:hover:text-indigo-400'
+                              }`}
+                              title="Listen to explanation"
+                            >
+                               {msg.isAudioPlaying ? (
+                                 <>
+                                   <span className="animate-bounce">🔈</span>
+                                   <span>Playing...</span>
+                                 </>
+                               ) : (
+                                 <>
+                                   <span>🔈</span>
+                                   <span>Listen</span>
+                                 </>
+                               )}
+                            </button>
+                          </div>
+                        </div>
                       )}
                     </div>
                   </div>
