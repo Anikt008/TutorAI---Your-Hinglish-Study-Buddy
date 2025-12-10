@@ -239,6 +239,7 @@ const App: React.FC = () => {
         onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
         isDarkMode={isDarkMode}
         onToggleTheme={() => setIsDarkMode(!isDarkMode)}
+        onNewChat={() => dispatch({ type: 'RESET_APP' })}
       />
 
       {/* Main Content Area */}

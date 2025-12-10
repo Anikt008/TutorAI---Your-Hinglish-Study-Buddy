@@ -10,9 +10,10 @@ interface Props {
   onToggle: () => void;
   isDarkMode: boolean;
   onToggleTheme: () => void;
+  onNewChat: () => void;
 }
 
-const Sidebar: React.FC<Props> = ({ currentMode, onNavigate, profile, isOpen, onToggle, isDarkMode, onToggleTheme }) => {
+const Sidebar: React.FC<Props> = ({ currentMode, onNavigate, profile, isOpen, onToggle, isDarkMode, onToggleTheme, onNewChat }) => {
   const menuItems = [
     { mode: AppMode.UPLOAD, label: '🏠 Home', desc: 'Upload & Start' },
     { mode: AppMode.CHAT, label: '💬 Chat', desc: 'Current Session' },
@@ -35,7 +36,20 @@ const Sidebar: React.FC<Props> = ({ currentMode, onNavigate, profile, isOpen, on
           <button onClick={onToggle} className="md:hidden text-slate-500">✕</button>
         </div>
 
-        <nav className="flex-1 p-4 space-y-2">
+        {/* New Chat Button */}
+        <div className="p-4 pb-0">
+          <button 
+            onClick={() => { onNewChat(); if (window.innerWidth < 768) onToggle(); }}
+            className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white p-3 rounded-xl flex items-center justify-center gap-2 font-bold shadow-lg shadow-indigo-200 dark:shadow-none transition-all transform active:scale-95 group"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 group-hover:rotate-90 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            New Chat
+          </button>
+        </div>
+
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           {menuItems.map((item) => (
             <button
               key={item.mode}
