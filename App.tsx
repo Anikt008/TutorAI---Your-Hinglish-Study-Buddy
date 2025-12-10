@@ -181,23 +181,6 @@ const App: React.FC = () => {
     }
   }, [isDarkMode]);
 
-  // Handle Offline Mode Fallback
-  const handleOfflineError = (error: any) => {
-    if (error.message === "OFFLINE_MODE" || error.message === "MISSING_KEY") {
-      if (!state.isOfflineMode) {
-        dispatch({ type: 'SET_OFFLINE_MODE', payload: true });
-        dispatch({ type: 'ADD_MESSAGE', payload: { 
-          id: Date.now().toString(), 
-          role: Sender.Bot, 
-          text: "⚠️ **Offline Mode Activated**\nInternet or API Key is missing. I will try my best to help you with limited knowledge!",
-          type: 'error'
-        }});
-      }
-      return true;
-    }
-    return false;
-  };
-
   const processResponse = (rawText: string): string => {
     const topicMatch = rawText.match(/\[\[TOPIC:\s*(.*?)\]\]/);
     if (topicMatch && topicMatch[1]) {
@@ -232,12 +215,10 @@ const App: React.FC = () => {
       dispatch({ type: 'ADD_MESSAGE', payload: { id: (Date.now() + 1).toString(), role: Sender.Bot, text: cleanText } });
       dispatch({ type: 'UPDATE_PROFILE', payload: { totalSessions: state.userProfile.totalSessions + 1 } });
     } catch (error) {
-      if (handleOfflineError(error)) {
-        const mock = getOfflineResponse(topic, ActionType.EXPLAIN);
-        dispatch({ type: 'ADD_MESSAGE', payload: { id: (Date.now() + 1).toString(), role: Sender.Bot, text: mock } });
-      } else {
-        dispatch({ type: 'SET_ERROR', payload: "Could not start session." });
-      }
+      console.warn("API Failed, switching to Offline Mode", error);
+      dispatch({ type: 'SET_OFFLINE_MODE', payload: true });
+      const mock = getOfflineResponse(topic, ActionType.EXPLAIN);
+      dispatch({ type: 'ADD_MESSAGE', payload: { id: (Date.now() + 1).toString(), role: Sender.Bot, text: mock } });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
@@ -264,11 +245,9 @@ const App: React.FC = () => {
         dispatch({ type: 'ADD_MESSAGE', payload: { id: (Date.now() + 1).toString(), role: Sender.Bot, text: cleanText } });
         dispatch({ type: 'UPDATE_PROFILE', payload: { totalSessions: state.userProfile.totalSessions + 1 } });
       } catch (error) {
-         if (handleOfflineError(error)) {
-           dispatch({ type: 'ADD_MESSAGE', payload: { id: (Date.now() + 1).toString(), role: Sender.Bot, text: "📷 **Offline Mode**: I can't analyze images without internet, but tell me the topic and I'll explain!" } });
-         } else {
-           dispatch({ type: 'ADD_MESSAGE', payload: { id: (Date.now() + 1).toString(), role: Sender.Bot, text: "Error analyzing image." } });
-         }
+         console.warn("API Failed, switching to Offline Mode", error);
+         dispatch({ type: 'SET_OFFLINE_MODE', payload: true });
+         dispatch({ type: 'ADD_MESSAGE', payload: { id: (Date.now() + 1).toString(), role: Sender.Bot, text: "📷 **Offline Mode**: I can't analyze images without internet, but tell me the topic and I'll explain!" } });
       } finally {
         dispatch({ type: 'SET_LOADING', payload: false });
       }
@@ -276,12 +255,27 @@ const App: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
-  const handleAction = async (action: ActionType) => {
+  const handleAction = async (action: ActionType | string) => {
     dispatch({ type: 'SET_LOADING', payload: true });
     
-    // Add User Action Bubble
-    const actionLabel = action.toUpperCase().replace('_', ' ');
-    dispatch({ type: 'ADD_MESSAGE', payload: { id: Date.now().toString(), role: Sender.User, text: `Apply: ${actionLabel}` } });
+    // Add User Action Bubble if it is a text input, if it is an enum (ActionType), format it.
+    let displayUserText = "";
+    
+    // Check if the action passed is one of the ActionType enum values.
+    // ActionType is a string enum, so we can check inclusion in its values.
+    const isActionEnum = Object.values(ActionType).includes(action as ActionType);
+
+    if (isActionEnum) {
+        displayUserText = `Apply: ${(action as string).toUpperCase().replace('_', ' ')}`;
+    } else {
+        displayUserText = action as string;
+    }
+    
+    // Check if the last message was the same user text to avoid double bubbles (handled in onKeyDown already)
+    const lastMsg = state.messages[state.messages.length - 1];
+    if (!lastMsg || lastMsg.role !== Sender.User || lastMsg.text !== displayUserText) {
+       dispatch({ type: 'ADD_MESSAGE', payload: { id: Date.now().toString(), role: Sender.User, text: displayUserText } });
+    }
 
     try {
       if (state.isOfflineMode) throw new Error("OFFLINE_MODE");
@@ -289,10 +283,14 @@ const App: React.FC = () => {
       const cleanText = processResponse(rawResponse);
       dispatch({ type: 'ADD_MESSAGE', payload: { id: (Date.now() + 1).toString(), role: Sender.Bot, text: cleanText } });
     } catch (error) {
-       if (handleOfflineError(error)) {
-          const mock = getOfflineResponse("", action);
-          dispatch({ type: 'ADD_MESSAGE', payload: { id: (Date.now() + 1).toString(), role: Sender.Bot, text: mock } });
-       }
+       console.warn("API Failed, switching to Offline Mode", error);
+       dispatch({ type: 'SET_OFFLINE_MODE', payload: true });
+       
+       const userQuery = typeof action === 'string' ? action : "";
+       const actionType = typeof action !== 'string' ? action : undefined;
+       
+       const mock = getOfflineResponse(userQuery, actionType);
+       dispatch({ type: 'ADD_MESSAGE', payload: { id: (Date.now() + 1).toString(), role: Sender.Bot, text: mock } });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
@@ -313,9 +311,9 @@ const App: React.FC = () => {
       const rawResponse = await analyzeYouTubeVideo(trimmedLink, state.userProfile);
       dispatch({ type: 'ADD_MESSAGE', payload: { id: (Date.now() + 1).toString(), role: Sender.Bot, text: processResponse(rawResponse) } });
     } catch (error) {
-       if(handleOfflineError(error)) {
-         dispatch({ type: 'ADD_MESSAGE', payload: { id: (Date.now() + 1).toString(), role: Sender.Bot, text: "📺 **Offline**: Can't watch videos. Type the topic!" } });
-       }
+       console.warn("API Failed, switching to Offline Mode", error);
+       dispatch({ type: 'SET_OFFLINE_MODE', payload: true });
+       dispatch({ type: 'ADD_MESSAGE', payload: { id: (Date.now() + 1).toString(), role: Sender.Bot, text: "📺 **Offline**: Can't watch videos without internet. Type the topic!" } });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
@@ -505,8 +503,8 @@ const App: React.FC = () => {
                         if (inputText.trim()) {
                            const txt = inputText;
                            setInputText('');
-                           dispatch({ type: 'ADD_MESSAGE', payload: { id: Date.now().toString(), role: Sender.User, text: txt } });
-                           handleAction(txt as any); // Treat text as custom action
+                           // Pass text directly to handleAction, don't duplicate dispatch here
+                           handleAction(txt); 
                         }
                       }
                     }}
