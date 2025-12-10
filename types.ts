@@ -13,6 +13,13 @@ export interface ChatMessage {
   type?: 'text' | 'diagram' | 'error';
 }
 
+export interface ChatSession {
+  id: string;
+  title: string;
+  timestamp: number;
+  messages: ChatMessage[];
+}
+
 export interface RevisionPlan {
   topic: string;
   tasks: string[];
@@ -53,7 +60,8 @@ export enum ActionType {
 export enum AppMode {
   UPLOAD = 'upload',
   CHAT = 'chat',
-  DASHBOARD = 'dashboard'
+  DASHBOARD = 'dashboard',
+  HISTORY = 'history'
 }
 
 // Speech Recognition Types (Kept same)
@@ -95,6 +103,7 @@ export interface SpeechRecognition extends EventTarget {
   onresult: (event: SpeechRecognitionEvent) => void;
   onerror: (event: SpeechRecognitionErrorEvent) => void;
   onend: () => void;
+  onstart: () => void;
 }
 
 declare global {
@@ -106,6 +115,8 @@ declare global {
 
 export interface AppState {
   messages: ChatMessage[];
+  chatHistory: ChatSession[];
+  currentSessionId: string | null;
   isLoading: boolean;
   currentMode: AppMode;
   error: string | null;
@@ -128,4 +139,7 @@ export type AppAction =
   | { type: 'SET_LISTENING'; payload: boolean }
   | { type: 'RESET_APP' }
   | { type: 'SET_OFFLINE_MODE'; payload: boolean }
-  | { type: 'UPDATE_MESSAGE_AUDIO'; payload: { id: string; isPlaying: boolean } };
+  | { type: 'UPDATE_MESSAGE_AUDIO'; payload: { id: string; isPlaying: boolean } }
+  | { type: 'LOAD_SESSION'; payload: ChatSession }
+  | { type: 'DELETE_SESSION'; payload: string }
+  | { type: 'CLEAR_HISTORY' };

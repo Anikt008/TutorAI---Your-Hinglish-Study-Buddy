@@ -1,16 +1,19 @@
 
-import React, { useEffect, useRef, useReducer } from 'react';
-import { Sender, ChatMessage, ActionType, UserProfile, ProgressReport, AppState, AppAction, SpeechRecognitionEvent, SpeechRecognitionErrorEvent, AppMode } from './types';
+import React, { useEffect, useRef, useReducer, useState } from 'react';
+import { Sender, ChatMessage, ActionType, UserProfile, ProgressReport, AppState, AppAction, SpeechRecognitionEvent, SpeechRecognitionErrorEvent, AppMode, SpeechRecognition, ChatSession } from './types';
 import UploadZone from './components/UploadZone';
 import MarkdownRenderer from './components/MarkdownRenderer';
 import Sidebar from './components/Sidebar';
 import SmartActions from './components/SmartActions';
 import ProfileModal from './components/ProfileModal'; // Can act as Dashboard detail view
+import HistoryView from './components/HistoryView';
 import { startNewSession, analyzeYouTubeVideo, sendFollowUp, generateSpeech, getOfflineResponse } from './services/geminiService';
 import { playAudioStream } from './services/audioUtils';
 
 const initialState: AppState = {
   messages: [],
+  chatHistory: [],
+  currentSessionId: null,
   isLoading: false,
   currentMode: AppMode.UPLOAD,
   error: null,
@@ -23,8 +26,49 @@ const initialState: AppState = {
 
 function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
-    case 'SET_MESSAGES': return { ...state, messages: action.payload };
-    case 'ADD_MESSAGE': return { ...state, messages: [...state.messages, action.payload] };
+    case 'SET_MESSAGES': 
+      return { ...state, messages: action.payload };
+    
+    case 'ADD_MESSAGE': {
+      const newMessages = [...state.messages, action.payload];
+      let sessionId = state.currentSessionId;
+      let sessionTitle = "New Chat";
+      const timestamp = Date.now();
+
+      // If no session exists, create one
+      if (!sessionId) {
+        sessionId = timestamp.toString();
+        // Determine title from first user message
+        const firstUserMsg = newMessages.find(m => m.role === Sender.User);
+        if (firstUserMsg) {
+           sessionTitle = firstUserMsg.image ? "Image Question" : (firstUserMsg.text.slice(0, 30) + (firstUserMsg.text.length > 30 ? "..." : ""));
+        }
+      } else {
+        // Retrieve existing title
+        const existingSession = state.chatHistory.find(s => s.id === sessionId);
+        if (existingSession) sessionTitle = existingSession.title;
+      }
+
+      // Update History
+      const updatedHistory = [
+        // Remove current session from history to re-add it at the top (or update it)
+        ...state.chatHistory.filter(s => s.id !== sessionId),
+        {
+          id: sessionId,
+          title: sessionTitle,
+          timestamp: timestamp,
+          messages: newMessages
+        }
+      ];
+
+      return { 
+        ...state, 
+        messages: newMessages,
+        currentSessionId: sessionId,
+        chatHistory: updatedHistory
+      };
+    }
+    
     case 'SET_LOADING': return { ...state, isLoading: action.payload };
     case 'SET_MODE': return { ...state, currentMode: action.payload };
     case 'SET_ERROR': return { ...state, error: action.payload };
@@ -33,33 +77,70 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'SET_YOUTUBE_LINK': return { ...state, youtubeLink: action.payload };
     case 'SET_LISTENING': return { ...state, isListening: action.payload };
     case 'SET_OFFLINE_MODE': return { ...state, isOfflineMode: action.payload };
+    
     case 'UPDATE_MESSAGE_AUDIO': 
       return { 
         ...state, 
         messages: state.messages.map(m => m.id === action.payload.id ? { ...m, isAudioPlaying: action.payload.isPlaying } : m)
       };
-    case 'RESET_APP': return { ...initialState, userProfile: state.userProfile, currentMode: AppMode.UPLOAD };
+    
+    case 'RESET_APP': 
+      return { 
+        ...state, 
+        messages: [],
+        currentSessionId: null, // Reset session ID for a new chat
+        currentMode: AppMode.UPLOAD 
+      };
+
+    case 'LOAD_SESSION':
+      return {
+        ...state,
+        messages: action.payload.messages,
+        currentSessionId: action.payload.id,
+        currentMode: AppMode.CHAT
+      };
+
+    case 'DELETE_SESSION':
+      return {
+        ...state,
+        chatHistory: state.chatHistory.filter(s => s.id !== action.payload),
+        // If deleting current session, reset view
+        ...(state.currentSessionId === action.payload ? { messages: [], currentSessionId: null, currentMode: AppMode.UPLOAD } : {})
+      };
+
+    case 'CLEAR_HISTORY':
+      return { ...state, chatHistory: [] };
+
     default: return state;
   }
 }
 
 const App: React.FC = () => {
-  const loadInitialProfile = (): UserProfile => {
+  const loadInitialState = (): { profile: UserProfile, history: ChatSession[] } => {
     try {
-      const saved = localStorage.getItem('tutorAiProfile');
-      return saved ? JSON.parse(saved) : initialState.userProfile;
+      const savedProfile = localStorage.getItem('tutorAiProfile');
+      const savedHistory = localStorage.getItem('tutorAiHistory');
+      return {
+        profile: savedProfile ? JSON.parse(savedProfile) : initialState.userProfile,
+        history: savedHistory ? JSON.parse(savedHistory) : []
+      };
     } catch (e) {
-      return initialState.userProfile;
+      return { profile: initialState.userProfile, history: [] };
     }
   };
 
+  const initData = loadInitialState();
+
   const [state, dispatch] = useReducer(appReducer, {
     ...initialState,
-    userProfile: loadInitialProfile()
+    userProfile: initData.profile,
+    chatHistory: initData.history
   });
 
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
   const [currentTopic, setCurrentTopic] = React.useState<string | null>(null);
+  const [inputText, setInputText] = useState('');
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
   
   // Dark Mode Logic
   const [isDarkMode, setIsDarkMode] = React.useState(() => {
@@ -78,9 +159,15 @@ const App: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [state.messages]);
 
+  // Persist Profile
   useEffect(() => {
     localStorage.setItem('tutorAiProfile', JSON.stringify(state.userProfile));
   }, [state.userProfile]);
+
+  // Persist History
+  useEffect(() => {
+    localStorage.setItem('tutorAiHistory', JSON.stringify(state.chatHistory));
+  }, [state.chatHistory]);
 
   // Sync Dark Mode class
   useEffect(() => {
@@ -128,11 +215,15 @@ const App: React.FC = () => {
   };
 
   const handleQuickStart = async (topic: string) => {
+    // Reset session for new quick start if we are not already in a chat
+    if (state.currentMode !== AppMode.CHAT) {
+      dispatch({ type: 'RESET_APP' });
+    }
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_MODE', payload: AppMode.CHAT });
     
     const userMsg: ChatMessage = { id: Date.now().toString(), role: Sender.User, text: `Explain: ${topic}` };
-    dispatch({ type: 'SET_MESSAGES', payload: [userMsg] });
+    dispatch({ type: 'ADD_MESSAGE', payload: userMsg });
 
     try {
       if (state.isOfflineMode) throw new Error("OFFLINE_MODE");
@@ -153,6 +244,7 @@ const App: React.FC = () => {
   };
 
   const handleImageSelect = async (file: File) => {
+    dispatch({ type: 'RESET_APP' });
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_MODE', payload: AppMode.CHAT });
 
@@ -163,7 +255,7 @@ const App: React.FC = () => {
       const mimeType = file.type || 'image/jpeg';
 
       const userMsg: ChatMessage = { id: Date.now().toString(), role: Sender.User, text: "Can you explain this question?", image: base64String };
-      dispatch({ type: 'SET_MESSAGES', payload: [userMsg] });
+      dispatch({ type: 'ADD_MESSAGE', payload: userMsg });
 
       try {
         if (state.isOfflineMode) throw new Error("OFFLINE_MODE");
@@ -210,9 +302,11 @@ const App: React.FC = () => {
     const trimmedLink = state.youtubeLink.trim();
     if (!trimmedLink) return;
 
+    dispatch({ type: 'RESET_APP' });
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_MODE', payload: AppMode.CHAT });
-    dispatch({ type: 'SET_MESSAGES', payload: [{ id: Date.now().toString(), role: Sender.User, text: `Video: ${trimmedLink}` }] });
+    
+    dispatch({ type: 'ADD_MESSAGE', payload: { id: Date.now().toString(), role: Sender.User, text: `Video: ${trimmedLink}` } });
     
     try {
       if (state.isOfflineMode) throw new Error("OFFLINE_MODE");
@@ -227,8 +321,57 @@ const App: React.FC = () => {
     }
   };
 
+  const handleVoiceInput = () => {
+    if (state.isListening) {
+      recognitionRef.current?.stop();
+      dispatch({ type: 'SET_LISTENING', payload: false });
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Your browser does not support voice input. Try using Chrome or Edge.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    // Setting to 'en-IN' for Hinglish support (Indian English often captures mixed phrases better than 'hi-IN' which might enforce Devanagari)
+    recognition.lang = 'en-IN'; 
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = () => {
+      dispatch({ type: 'SET_LISTENING', payload: true });
+    };
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      const transcript = event.results[0][0].transcript;
+      setInputText(prev => (prev ? prev + ' ' : '') + transcript);
+    };
+
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      console.error("Speech Recognition Error:", event.error);
+      dispatch({ type: 'SET_LISTENING', payload: false });
+    };
+
+    recognition.onend = () => {
+      dispatch({ type: 'SET_LISTENING', payload: false });
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  };
+
+  const handleCloseProfile = () => {
+    // Safely determine next mode: Chat if messages exist, otherwise Home
+    // Ensure state.messages is checked for validity
+    const hasMessages = state.messages && Array.isArray(state.messages) && state.messages.length > 0;
+    const nextMode = hasMessages ? AppMode.CHAT : AppMode.UPLOAD;
+    dispatch({ type: 'SET_MODE', payload: nextMode });
+  };
+
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-200 overflow-hidden">
+    <div className="flex h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-200 overflow-hidden relative">
       
       {/* Sidebar Navigation */}
       <Sidebar 
@@ -271,7 +414,7 @@ const App: React.FC = () => {
               
               {/* Quick Start Chips */}
               <div className="flex gap-2 mt-8 flex-wrap justify-center">
-                {["🚀 Newton's Laws", "∫ Calculus", "🇮🇳 Indian History", "🧬 DNA Structure"].map(topic => (
+                {["🚀 Newton's Laws", "🌿 Photosynthesis", "∫ Calculus", "🇮🇳 Indian History", "🧬 DNA Structure", "💰 Balance Sheet"].map(topic => (
                   <button key={topic} onClick={() => handleQuickStart(topic)} className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full text-sm font-medium hover:border-indigo-500 hover:scale-105 transition-all shadow-sm dark:text-slate-200">
                     {topic}
                   </button>
@@ -291,6 +434,19 @@ const App: React.FC = () => {
                 <button onClick={handleVideoAnalysis} className="absolute right-2 top-2 bottom-2 bg-indigo-600 text-white px-4 rounded-lg text-sm font-bold hover:bg-indigo-700">Go</button>
               </div>
             </div>
+          )}
+
+          {state.currentMode === AppMode.HISTORY && (
+            <HistoryView 
+              sessions={state.chatHistory}
+              onSelect={(session) => dispatch({ type: 'LOAD_SESSION', payload: session })}
+              onDelete={(id) => dispatch({ type: 'DELETE_SESSION', payload: id })}
+              onClear={() => {
+                if(window.confirm("Are you sure you want to clear all history?")) {
+                  dispatch({ type: 'CLEAR_HISTORY' });
+                }
+              }}
+            />
           )}
 
           {state.currentMode === AppMode.CHAT && (
@@ -329,18 +485,6 @@ const App: React.FC = () => {
               <div ref={messagesEndRef} />
             </div>
           )}
-
-          {state.currentMode === AppMode.DASHBOARD && (
-             <div className="py-8 animate-fade-in">
-                <ProfileModal 
-                  isOpen={true} // Always open in dashboard mode
-                  onClose={() => {}} // No close button in dashboard mode
-                  profile={state.userProfile}
-                  history={state.messages}
-                  onSaveReport={(r) => dispatch({ type: 'UPDATE_PROFILE', payload: { progressReport: r } })}
-                />
-             </div>
-          )}
         </main>
 
         {/* Chat Footer */}
@@ -352,14 +496,15 @@ const App: React.FC = () => {
                <div className="flex gap-2 relative">
                  <input 
                     type="text" 
-                    placeholder="Ask a follow-up..."
-                    className="flex-1 bg-slate-100 dark:bg-slate-800 border-none rounded-full px-5 py-3 focus:ring-2 focus:ring-indigo-500 outline-none dark:text-white shadow-inner"
+                    placeholder={state.isListening ? "Listening..." : "Ask a follow-up..."}
+                    value={inputText}
+                    onChange={(e) => setInputText(e.target.value)}
+                    className={`flex-1 bg-slate-100 dark:bg-slate-800 border-none rounded-full px-5 py-3 focus:ring-2 focus:ring-indigo-500 outline-none dark:text-white shadow-inner transition-all ${state.isListening ? 'animate-pulse ring-2 ring-indigo-300' : ''}`}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
-                        const target = e.target as HTMLInputElement;
-                        if (target.value.trim()) {
-                           const txt = target.value;
-                           target.value = '';
+                        if (inputText.trim()) {
+                           const txt = inputText;
+                           setInputText('');
                            dispatch({ type: 'ADD_MESSAGE', payload: { id: Date.now().toString(), role: Sender.User, text: txt } });
                            handleAction(txt as any); // Treat text as custom action
                         }
@@ -367,12 +512,33 @@ const App: React.FC = () => {
                     }}
                  />
                  {/* Voice Button */}
-                 <button className="p-3 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-colors">🎤</button>
+                 <button 
+                   onClick={handleVoiceInput}
+                   className={`p-3 rounded-full transition-all duration-200 ${
+                     state.isListening 
+                     ? 'bg-red-100 text-red-600 animate-pulse ring-2 ring-red-400' 
+                     : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/50'
+                   }`}
+                   title="Voice Input"
+                 >
+                   {state.isListening ? '⏹️' : '🎤'}
+                 </button>
                </div>
              </div>
           </div>
         )}
       </div>
+
+      {/* Render ProfileModal at root level for proper z-index and event handling */}
+      {state.currentMode === AppMode.DASHBOARD && (
+        <ProfileModal 
+          isOpen={true}
+          onClose={handleCloseProfile}
+          profile={state.userProfile}
+          history={state.messages || []} // Default to empty array to prevent crashes
+          onSaveReport={(r) => dispatch({ type: 'UPDATE_PROFILE', payload: { progressReport: r } })}
+        />
+      )}
     </div>
   );
 };

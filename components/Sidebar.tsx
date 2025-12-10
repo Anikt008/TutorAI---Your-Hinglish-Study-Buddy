@@ -15,9 +15,10 @@ interface Props {
 
 const Sidebar: React.FC<Props> = ({ currentMode, onNavigate, profile, isOpen, onToggle, isDarkMode, onToggleTheme, onNewChat }) => {
   const menuItems = [
+    { mode: AppMode.DASHBOARD, label: '📊 Dashboard', desc: 'Progress & Stats' },
     { mode: AppMode.UPLOAD, label: '🏠 Home', desc: 'Upload & Start' },
     { mode: AppMode.CHAT, label: '💬 Chat', desc: 'Current Session' },
-    { mode: AppMode.DASHBOARD, label: '📊 Dashboard', desc: 'Progress & Stats' },
+    { mode: AppMode.HISTORY, label: '📜 History', desc: 'Past Sessions' },
   ];
 
   return (

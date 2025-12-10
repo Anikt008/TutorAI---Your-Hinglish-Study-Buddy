@@ -1,4 +1,6 @@
 
+
+
 import { GoogleGenAI, Chat, Modality } from "@google/genai";
 import { ActionType, UserProfile, ChatMessage, RevisionPlan } from "../types";
 
@@ -27,6 +29,17 @@ let chatSession: Chat | null = null;
 // --- FALLBACK MOCK ENGINE ---
 // This runs if API Key is missing or network fails
 const getMockResponse = (input: string, action?: ActionType): string => {
+  // New logic for specific keywords
+  const lowerInput = input ? input.toLowerCase() : "";
+  
+  if (lowerInput.includes("photosynthesis")) {
+      return `🌿 **Photosynthesis Process:**\n\n**Flow:**\nSunlight ☀️ → Chlorophyll 🍃 → Food 🍎 → Energy ⚡\n\n**Simple Definition:**\nJaise hum kitchen mein khana banate hain, plants **Leaves** mein khana banate hain using Sunlight and Water.\n\n[[TOPIC: Biology]]`;
+  }
+
+  if (lowerInput.includes("balance sheet")) {
+      return `💰 **Balance Sheet Concept:**\n\n**Flow:**\nAssets 🏠 → Liabilities 💳 → Equity 💼\n\n**Simple Definition:**\nBalance Sheet ek "financial snapshot" hai. Ye batata hai ki company ke paas aaj kya hai (Assets) aur use udhaar kitna chukana hai (Liabilities).\n\nFormula: **Assets = Liabilities + Equity**\n\n[[TOPIC: Accounting]]`;
+  }
+
   const genericTopic = "Physics/Math Concept";
   
   const mocks: Record<string, string> = {
@@ -42,7 +55,7 @@ const getMockResponse = (input: string, action?: ActionType): string => {
 };
 
 const createClient = () => {
-  const apiKey = process.env.API_KEY || (import.meta as any).env?.VITE_API_KEY; 
+  const apiKey = process.env.API_KEY; 
   if (!apiKey) {
     throw new Error("MISSING_KEY"); // Signal to switch to offline mode
   }

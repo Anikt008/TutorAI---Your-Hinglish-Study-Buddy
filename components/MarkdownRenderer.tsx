@@ -5,6 +5,9 @@ interface Props {
 }
 
 const MarkdownRenderer: React.FC<Props> = ({ content }) => {
+  // Safe guard against null/undefined content
+  if (!content) return null;
+
   // A basic markdown parser that handles code blocks, headers, lists, and bold text.
   
   const formatText = (text: string) => {
