@@ -119,7 +119,7 @@ export const startNewSession = async (imageBase64: string | null, mimeType: stri
     const client = createClient();
     
     chatSession = client.chats.create({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-2.5-flash',
       config: { systemInstruction: SYSTEM_INSTRUCTION }
     });
 
@@ -151,20 +151,22 @@ export const analyzeYouTubeVideo = async (url: string, profile: UserProfile): Pr
   try {
     const client = createClient();
     chatSession = client.chats.create({
-      model: 'gemini-3-pro-preview',
+      // Switched to Flash for faster analysis
+      model: 'gemini-2.5-flash',
       // We use googleSearch to effectively 'getVideoInfo' and analyze content
       config: { systemInstruction: SYSTEM_INSTRUCTION, tools: [{ googleSearch: {} }] }
     });
-    const prompt = `You are TutorAI. 
-Analyze this YouTube link to provide a comprehensive study guide in Hinglish.
-Using the video's metadata (and search results if available), provide the following in detail:
+    
+    // Shortened prompt for speed
+    const prompt = `You are TutorAI. Analyze this YouTube link SUPER FAST.
+Give a short, sharp Hinglish summary (max 100 words).
 
-1. **📝 Detailed Summary**: A comprehensive explanation of what the video covers, expanding on the main topic.
-2. **🔑 Key Takeaways**: The most important points, facts, or formulas mentioned (bullet points).
-3. **💡 Practical Application**: How to use this information in real life or exams. (What is the use of this info?)
-4. **📚 Structured Notes**: A mini-revision note for students.
+Format:
+1. **Summary** (2 lines max)
+2. **Key Points** (3 bullet points max)
+3. **Real Life Use** (1 line)
 
-Here is the link: ${url}
+Link: ${url}
 
 ${getProfileContext(profile)}
 
