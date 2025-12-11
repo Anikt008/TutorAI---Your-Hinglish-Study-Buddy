@@ -157,14 +157,15 @@ export const analyzeYouTubeVideo = async (url: string, profile: UserProfile): Pr
       config: { systemInstruction: SYSTEM_INSTRUCTION, tools: [{ googleSearch: {} }] }
     });
     
-    // Shortened prompt for speed
-    const prompt = `You are TutorAI. Analyze this YouTube link SUPER FAST.
-Give a short, sharp Hinglish summary (max 100 words).
+    const prompt = `You are TutorAI. 
+Is YouTube link ka title, description, tags aur publicly visible metadata dekh kar 
+simple Hinglish me explanation do.
 
-Format:
-1. **Summary** (2 lines max)
-2. **Key Points** (3 bullet points max)
-3. **Real Life Use** (1 line)
+Return these sections:
+1. Summary (3 lines)
+2. Key Points (5 bullets)
+3. Real-Life Example
+4. 1-Minute Revision Notes
 
 Link: ${url}
 
